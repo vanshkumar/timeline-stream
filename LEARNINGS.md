@@ -14,4 +14,9 @@
 - Action: Use the committed pnpm lockfile, retain the esbuild allow-list, and keep `manifest.json` and the `obsidian` package aligned at 1.13.1 until deliberately upgraded together.
 - Confidence: high
 
+**[2026-08-30] — GitHub publishing**
+- Observation: GitHub CLI credentials stored in the macOS keyring appear invalid inside the restricted sandbox but authenticate correctly when the CLI is allowed to access the host keyring.
+- Action: Retry GitHub CLI operations with approved host access before treating the saved account as logged out.
+- Confidence: high
+
 ## What Has Failed
