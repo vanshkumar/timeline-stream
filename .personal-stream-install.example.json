@@ -1,0 +1,4 @@
+{
+  "target": "/absolute/path/to/your/vault/or/a-note-inside-it.md",
+  "configFolder": ".obsidian"
+}

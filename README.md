@@ -17,9 +17,33 @@ pnpm run check
 
 `pnpm run dev` watches and rebuilds `main.js`. Runtime source must use Obsidian Vault/FileManager APIs and browser APIs only; Node filesystem APIs are restricted to development scripts.
 
-## Private installation
+## Local installation
 
-Keep this repository outside the vault. In Obsidian, configure `.obsidian-mac` on the Mac and `.obsidian-ios` on the iPhone under **Settings → Files and Links → Override config folder**.
+Keep this repository outside the vault. Create the local, Git-ignored install configuration once:
+
+```sh
+cp .personal-stream-install.example.json .personal-stream-install.json
+```
+
+Set `target` to either the vault or any existing note inside it. The installer walks upward to find the configured Obsidian folder, builds the plugin, and preserves plugin-local data while updating only `main.js`, `manifest.json`, and `styles.css`.
+
+Install or update with:
+
+```sh
+./install.sh
+```
+
+Then reload Obsidian and enable **Personal Stream** under **Settings → Community plugins**. When the vault and its `.obsidian` folder are synced through iCloud, the same installed bundle becomes available on iPhone after iCloud finishes syncing.
+
+You can also override the saved destination for one run:
+
+```sh
+pnpm run install:local -- --target /absolute/path/to/a/vault/or/note.md
+```
+
+## Separate Mac and iPhone config folders
+
+If the vault uses `.obsidian-mac` on the Mac and `.obsidian-ios` on the iPhone under **Settings → Files and Links → Override config folder**, use the dual-config deployment command instead.
 
 From the Mac:
 

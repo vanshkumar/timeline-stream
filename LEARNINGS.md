@@ -9,6 +9,11 @@
 
 ## Patterns and Preferences
 
+**[2026-08-30] — Local vault installation**
+- Observation: The Personal iCloud vault uses the standard shared `.obsidian` configuration folder, and the provided path may be a note rather than the vault root.
+- Action: Keep the personal target in the ignored `.personal-stream-install.json`, locate the vault by walking upward to the configured Obsidian folder, and preserve plugin-local data when replacing build artifacts.
+- Confidence: high
+
 **[2026-08-29] — Project tooling**
 - Observation: This workspace exposes bundled Node and pnpm rather than npm, and pnpm requires `esbuild` to be explicitly allowed in `pnpm-workspace.yaml`; the newest published Obsidian typings available during setup were 1.13.1.
 - Action: Use the committed pnpm lockfile, retain the esbuild allow-list, and keep `manifest.json` and the `obsidian` package aligned at 1.13.1 until deliberately upgraded together.
