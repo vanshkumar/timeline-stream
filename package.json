@@ -1,0 +1,30 @@
+{
+  "name": "personal-stream",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.19.0",
+  "description": "A private, offline-first personal timeline for Obsidian.",
+  "scripts": {
+    "dev": "node esbuild.config.mjs development",
+    "build": "node esbuild.config.mjs production",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "pnpm run typecheck && pnpm run test && pnpm run build",
+    "deploy": "pnpm run check && node scripts/deploy.mjs"
+  },
+  "dependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "esbuild": "^0.25.9",
+    "obsidian": "^1.13.1",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

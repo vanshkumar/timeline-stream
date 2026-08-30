@@ -1,0 +1,9 @@
+{
+  "id": "personal-stream",
+  "name": "Personal Stream",
+  "version": "0.1.0",
+  "minAppVersion": "1.13.1",
+  "description": "A private, offline-first timeline for messaging yourself.",
+  "author": "Vansh Kumar",
+  "isDesktopOnly": false
+}
