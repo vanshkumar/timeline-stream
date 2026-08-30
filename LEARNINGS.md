@@ -9,6 +9,11 @@
 
 ## Patterns and Preferences
 
+**[2026-08-30] — Installer runtime discovery**
+- Observation: The user's Node and npm installations are managed by mise and may not be directly available on `PATH` in a non-interactive shell, while `mise exec --` resolves both correctly.
+- Action: Keep the local installer independent of pnpm and have its wrapper try active Node/npm, then mise-managed Node/npm, before falling back to Node/pnpm.
+- Confidence: high
+
 **[2026-08-30] — Local vault installation**
 - Observation: The Personal iCloud vault uses the standard shared `.obsidian` configuration folder, and the provided path may be a note rather than the vault root.
 - Action: Keep the personal target in the ignored `.personal-stream-install.json`, locate the vault by walking upward to the configured Obsidian folder, and preserve plugin-local data when replacing build artifacts.

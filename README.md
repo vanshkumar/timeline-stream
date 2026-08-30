@@ -33,6 +33,8 @@ Install or update with:
 ./install.sh
 ```
 
+The wrapper supports Node/npm activated in the current shell, Node/npm managed by mise, or Node/pnpm. Its install command does not require pnpm specifically.
+
 Then reload Obsidian and enable **Personal Stream** under **Settings → Community plugins**. When the vault and its `.obsidian` folder are synced through iCloud, the same installed bundle becomes available on iPhone after iCloud finishes syncing.
 
 You can also override the saved destination for one run:
