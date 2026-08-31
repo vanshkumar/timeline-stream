@@ -44,4 +44,9 @@
 - Action: Retry GitHub CLI operations with approved host access before treating the saved account as logged out.
 - Confidence: high
 
+**[2026-08-30] — User documentation scope**
+- Observation: Installation and smoke-test instructions did not state the everyday timeline workflow after the timeline-first redesign.
+- Action: Keep the normal interaction summary concise and near the opening instructions; document the `+` composer, draft preservation, newest-first order, and earlier-page loading without duplicating visual details.
+- Confidence: high
+
 ## What Has Failed

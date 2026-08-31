@@ -61,6 +61,8 @@ The command tests and builds the plugin, archives the release under `dist/releas
 - The deep link is `obsidian://personal-stream?vault=YOUR%20VAULT`.
 - For a Home Screen icon, create an Apple Shortcut containing only **Open URLs** with that link, then add the Shortcut to the Home Screen. It does not use Shortcuts for text entry.
 
+The timeline opens newest-first. Tap `+` to compose; closing the composer preserves the draft, and **Load earlier** appends older entries.
+
 ## Slash commands
 
 - `/tag idea project` followed by the entry on later lines attaches YAML tags.
