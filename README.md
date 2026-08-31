@@ -63,6 +63,10 @@ The command tests and builds the plugin, archives the release under `dist/releas
 
 The timeline opens newest-first. Tap `+` to compose; closing the composer preserves the draft, and **Load earlier** appends older entries.
 
+## Quote a note selection
+
+On desktop, highlight text in a Markdown note and run **Quote selection to personal stream**. You can optionally assign the command a hotkey in Obsidian. Review or comment on the prefilled Markdown, then press **Post** to send it normally.
+
 ## Slash commands
 
 - `/tag idea project` followed by the entry on later lines attaches YAML tags.

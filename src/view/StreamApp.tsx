@@ -5,11 +5,13 @@ import { createEntryIdentity } from "../domain/identity";
 import type { RecoveryReport } from "../storage/recovery-service";
 import { Timeline } from "./Timeline";
 import { Composer } from "./Composer";
+import { appendGeneratedContent, type ComposeRequestBridge } from "./compose-request-bridge";
 import { StreamIcon } from "./StreamIcon";
 import type { StreamServices } from "./types";
 
 export interface StreamAppProps {
   services: StreamServices;
+  composeRequests: ComposeRequestBridge;
 }
 
 function withoutError(draft: DraftState): DraftState {
@@ -22,7 +24,7 @@ function isEmptyDraft(draft: DraftState): boolean {
   return !draft.identity && !draft.body && draft.tags.length === 0 && draft.attachments.length === 0 && draft.phase === "draft";
 }
 
-export function StreamApp({ services }: StreamAppProps) {
+export function StreamApp({ services, composeRequests }: StreamAppProps) {
   const [draft, setDraft] = useState<DraftState>(() => services.drafts.load());
   const [entries, setEntries] = useState(() => services.index.getEntries());
   const [loadedCount, setLoadedCount] = useState(PAGE_SIZE);
@@ -33,10 +35,27 @@ export function StreamApp({ services }: StreamAppProps) {
   const [recovery, setRecovery] = useState<RecoveryReport | null>(null);
   const [composing, setComposing] = useState(false);
   const [composerBusy, setComposerBusy] = useState(false);
+  const [focusRequestId, setFocusRequestId] = useState(0);
   const atNewest = useRef(true);
   const composeButtonRef = useRef<HTMLButtonElement>(null);
   const draftRef = useRef(draft);
+  const sendingRef = useRef(sending);
   draftRef.current = draft;
+  sendingRef.current = sending;
+
+  const consumeComposeRequests = useCallback(() => {
+    if (sendingRef.current) return;
+    const requests = composeRequests.drain();
+    if (requests.length === 0) return;
+    const updatedAt = Date.now();
+    setDraft((current) => requests.reduce(
+      (next, request) => appendGeneratedContent(next, request.markdown, updatedAt),
+      current
+    ));
+    setError(null);
+    setComposing(true);
+    setFocusRequestId(requests.at(-1)?.id ?? 0);
+  }, [composeRequests]);
 
   const persistDraft = useCallback((current: DraftState) => {
     if (isEmptyDraft(current)) services.drafts.clear();
@@ -63,6 +82,8 @@ export function StreamApp({ services }: StreamAppProps) {
     });
     return unsubscribe;
   }, [services.index]);
+
+  useEffect(() => composeRequests.subscribe(consumeComposeRequests), [composeRequests, consumeComposeRequests]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -133,6 +154,7 @@ export function StreamApp({ services }: StreamAppProps) {
     }
 
     const identity = draft.identity ?? createEntryIdentity();
+    sendingRef.current = true;
     setSending(true);
     setDraft((current) => ({ ...current, identity, body: outcome.body, tags: outcome.tags, phase: "committing", updatedAt: Date.now() }));
     try {
@@ -159,7 +181,9 @@ export function StreamApp({ services }: StreamAppProps) {
       setDraft((current) => ({ ...current, phase: "error", error: message, updatedAt: Date.now() }));
       setError(message);
     } finally {
+      sendingRef.current = false;
       setSending(false);
+      consumeComposeRequests();
     }
   };
 
@@ -221,6 +245,7 @@ export function StreamApp({ services }: StreamAppProps) {
             <Composer
               draft={draft}
               services={services}
+              focusRequestId={focusRequestId}
               sending={sending}
               error={error}
               onBodyChange={(body) => mutateDraft((current) => ({ ...current, body }))}

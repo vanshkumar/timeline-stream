@@ -7,6 +7,7 @@ import type { StreamServices } from "./types";
 export interface ComposerProps {
   draft: DraftState;
   services: StreamServices;
+  focusRequestId: number;
   sending: boolean;
   error: string | null;
   onBodyChange(body: string): void;
@@ -45,6 +46,7 @@ function AttachmentChip({ attachment, services, onRemove }: {
 export function Composer({
   draft,
   services,
+  focusRequestId,
   sending,
   error,
   onBodyChange,
@@ -68,6 +70,13 @@ export function Composer({
     input.style.height = "auto";
     input.style.height = `${input.scrollHeight}px`;
   }, [draft.body]);
+
+  useLayoutEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }, [focusRequestId]);
 
   useEffect(() => {
     if (!recording) return;

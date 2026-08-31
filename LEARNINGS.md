@@ -9,6 +9,16 @@
 
 ## Patterns and Preferences
 
+**[2026-08-30] — Internal links in rendered cards**
+- Observation: `MarkdownRenderer.render` creates and styles internal-link anchors but does not attach Markdown preview navigation behavior inside the React-backed custom `ItemView`.
+- Action: Delegate card `click` and `auxclick` events for `a.internal-link` to `Workspace.openLinkText`, passing the saved entry path and `Keymap.isModEvent`, and bind the handlers through the renderer component lifecycle.
+- Confidence: high
+
+**[2026-08-30] — Plugin-to-composer requests**
+- Observation: `StreamView` cannot await React mounting after `root.render`, the live React draft may be newer than `DraftStore`, and a successful in-flight send clears draft state.
+- Action: Route plugin-originated composer prefills through a view-owned FIFO bridge, merge them with functional draft updates, and leave requests queued until any in-flight send finishes.
+- Confidence: high
+
 **[2026-08-30] — Timeline presentation order**
 - Observation: `StreamIndex` can remain deterministically oldest-first while the Twitter-style view shows the newest page first by reversing only the sliced page; loading earlier then appends older entries without disturbing the current scroll position.
 - Action: Keep index/storage ordering stable and implement chronology, top anchoring, and new-entry indicators within `StreamApp` and `Timeline`.
