@@ -65,7 +65,6 @@ The command tests and builds the plugin, archives the release under `dist/releas
 
 - `/tag idea project` followed by the entry on later lines attaches YAML tags.
 - `/todo Buy milk` creates a Markdown task.
-- `/today` filters the stream to entries captured today.
 - Start a literal slash entry with `//`.
 
 ## iPhone smoke test
@@ -73,10 +72,10 @@ The command tests and builds the plugin, archives the release under `dist/releas
 Before relying on media capture, verify on the actual iPhone:
 
 1. Open the stream from Obsidian and the deep link.
-2. Send Markdown text and open the resulting normal note.
+2. Tap `+`, send Markdown text, and open the resulting normal note.
 3. Choose a photo and take a photo. A system source chooser is an acceptable camera fallback.
 4. Record about 30 seconds of audio, stop it, send it, and play it from the rendered entry.
-5. Restart Obsidian with an unsent draft and confirm it returns.
+5. Restart Obsidian with an unsent draft, tap `+`, and confirm the draft returns.
 6. Create one offline entry on each device, reconnect, and confirm both survive.
 
 Audio recording depends on the browser media APIs exposed by Obsidian's iOS WebView. Background and locked-phone recording are intentionally unsupported.

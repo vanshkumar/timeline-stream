@@ -9,6 +9,21 @@
 
 ## Patterns and Preferences
 
+**[2026-08-30] — Timeline presentation order**
+- Observation: `StreamIndex` can remain deterministically oldest-first while the Twitter-style view shows the newest page first by reversing only the sliced page; loading earlier then appends older entries without disturbing the current scroll position.
+- Action: Keep index/storage ordering stable and implement chronology, top anchoring, and new-entry indicators within `StreamApp` and `Timeline`.
+- Confidence: high
+
+**[2026-08-30] — Stream view styling**
+- Observation: A named CSS container on the full-height Stream app adapts reliably to narrow Obsidian leaves, and Obsidian's `setIcon` supplies interface icons without adding a runtime dependency; theme surfaces can remain native while brand and accessible action blues stay separate.
+- Action: Keep future Stream presentation changes scoped to the view, use container queries for leaf-width breakpoints, retain Obsidian surface/text tokens, and source functional icons through `setIcon`.
+- Confidence: high
+
+**[2026-08-30] — Timeline-first compose navigation**
+- Observation: Keeping `Timeline` mounted and inert beneath an opaque, app-local compose layer preserves its scroll position while an explicit FAB prevents saved drafts or open commands from replacing the default timeline; header-only actions such as `/today` become unsafe once their visible reset control is removed.
+- Action: Keep timeline and compose as explicit states, flush drafts on dismissal and view teardown, return to the timeline only after a confirmed commit, and remove navigation commands whose state can no longer be seen and reset.
+- Confidence: high
+
 **[2026-08-30] — Installer runtime discovery**
 - Observation: The user's Node and npm installations are managed by mise and may not be directly available on `PATH` in a non-interactive shell, while `mise exec --` resolves both correctly.
 - Action: Keep the local installer independent of pnpm and have its wrapper try active Node/npm, then mise-managed Node/npm, before falling back to Node/pnpm.

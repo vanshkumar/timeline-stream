@@ -39,10 +39,4 @@ export class StreamView extends ItemView {
     this.root?.unmount();
     this.root = null;
   }
-
-  focusComposer(): void {
-    window.requestAnimationFrame(() => {
-      this.contentEl.querySelector<HTMLTextAreaElement>(".personal-stream-composer-input")?.focus();
-    });
-  }
 }

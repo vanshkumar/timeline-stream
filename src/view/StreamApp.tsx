@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Notice } from "obsidian";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PAGE_SIZE, emptyDraft, type DraftState, type StoredAttachment } from "../domain/entry";
-import { createEntryIdentity, formatRfc3339 } from "../domain/identity";
+import { createEntryIdentity } from "../domain/identity";
 import type { RecoveryReport } from "../storage/recovery-service";
 import { Timeline } from "./Timeline";
 import { Composer } from "./Composer";
+import { StreamIcon } from "./StreamIcon";
 import type { StreamServices } from "./types";
 
 export interface StreamAppProps {
@@ -16,27 +18,46 @@ function withoutError(draft: DraftState): DraftState {
   return next;
 }
 
+function isEmptyDraft(draft: DraftState): boolean {
+  return !draft.identity && !draft.body && draft.tags.length === 0 && draft.attachments.length === 0 && draft.phase === "draft";
+}
+
 export function StreamApp({ services }: StreamAppProps) {
   const [draft, setDraft] = useState<DraftState>(() => services.drafts.load());
   const [entries, setEntries] = useState(() => services.index.getEntries());
-  const [query, setQuery] = useState("");
-  const [searchMatches, setSearchMatches] = useState<Set<string> | null>(null);
-  const [searching, setSearching] = useState(false);
-  const [selectedTag, setSelectedTag] = useState("");
-  const [todayOnly, setTodayOnly] = useState(false);
   const [loadedCount, setLoadedCount] = useState(PAGE_SIZE);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(draft.error ?? null);
-  const [scrollSignal, setScrollSignal] = useState(0);
+  const [scrollToNewestSignal, setScrollToNewestSignal] = useState(0);
   const [newCount, setNewCount] = useState(0);
   const [recovery, setRecovery] = useState<RecoveryReport | null>(null);
-  const atBottom = useRef(true);
+  const [composing, setComposing] = useState(false);
+  const [composerBusy, setComposerBusy] = useState(false);
+  const atNewest = useRef(true);
+  const composeButtonRef = useRef<HTMLButtonElement>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+
+  const persistDraft = useCallback((current: DraftState) => {
+    if (isEmptyDraft(current)) services.drafts.clear();
+    else services.drafts.save(current);
+  }, [services.drafts]);
+
+  const showTimeline = useCallback(() => {
+    setComposing(false);
+    window.requestAnimationFrame(() => composeButtonRef.current?.focus());
+  }, []);
+
+  const closeComposer = useCallback(() => {
+    persistDraft(draftRef.current);
+    showTimeline();
+  }, [persistDraft, showTimeline]);
 
   useEffect(() => {
     const unsubscribe = services.index.subscribe((reason) => {
       setEntries([...services.index.getEntries()]);
       if (reason === "create") {
-        if (atBottom.current) setScrollSignal((value) => value + 1);
+        if (atNewest.current) setScrollToNewestSignal((value) => value + 1);
         else setNewCount((value) => value + 1);
       }
     });
@@ -45,12 +66,12 @@ export function StreamApp({ services }: StreamAppProps) {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const isEmpty = !draft.identity && !draft.body && draft.tags.length === 0 && draft.attachments.length === 0 && draft.phase === "draft";
-      if (isEmpty) services.drafts.clear();
-      else services.drafts.save(draft);
+      persistDraft(draft);
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [draft, services.drafts]);
+  }, [draft, persistDraft]);
+
+  useEffect(() => () => persistDraft(draftRef.current), [persistDraft]);
 
   useEffect(() => {
     const ids = services.index.getEntryIds();
@@ -59,52 +80,17 @@ export function StreamApp({ services }: StreamAppProps) {
   }, [draft.phase, draft.identity, entries, services.index, services.recovery]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => {
-      if (!query.trim()) {
-        setSearchMatches(null);
-        setSearching(false);
-        return;
-      }
-      setSearching(true);
-      void services.search
-        .search(entries, query, controller.signal)
-        .then(setSearchMatches)
-        .catch((caught) => {
-          if (!(caught instanceof DOMException && caught.name === "AbortError")) {
-            setError(caught instanceof Error ? caught.message : String(caught));
-          }
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setSearching(false);
-        });
-    }, 200);
-    return () => {
-      controller.abort();
-      window.clearTimeout(timer);
+    if (!composing) return;
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape" || event.isComposing || sending || composerBusy) return;
+      event.preventDefault();
+      closeComposer();
     };
-  }, [entries, query, services.search]);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [closeComposer, composerBusy, composing, sending]);
 
-  useEffect(() => {
-    setLoadedCount(PAGE_SIZE);
-    setScrollSignal((value) => value + 1);
-  }, [query, selectedTag, todayOnly]);
-
-  const allTags = useMemo(
-    () => [...new Set(entries.flatMap((entry) => entry.tags))].sort((left, right) => left.localeCompare(right)),
-    [entries]
-  );
-  const today = formatRfc3339(new Date()).slice(0, 10);
-  const filteredEntries = useMemo(
-    () => entries.filter((entry) => {
-      if (todayOnly && entry.createdAt.slice(0, 10) !== today) return false;
-      if (selectedTag && !entry.tags.includes(selectedTag)) return false;
-      if (searchMatches && !searchMatches.has(entry.path)) return false;
-      return true;
-    }),
-    [entries, searchMatches, selectedTag, today, todayOnly]
-  );
-  const visibleEntries = filteredEntries.slice(-loadedCount);
+  const visibleEntries = entries.slice(-loadedCount).reverse();
 
   const mutateDraft = (mutator: (current: DraftState) => DraftState) => {
     setDraft((current) => withoutError(mutator(current)));
@@ -141,11 +127,6 @@ export function StreamApp({ services }: StreamAppProps) {
       setError(outcome.message);
       return;
     }
-    if (outcome.kind === "action") {
-      setTodayOnly(true);
-      mutateDraft((current) => ({ ...current, body: "" }));
-      return;
-    }
     if (outcome.kind === "draft") {
       mutateDraft((current) => ({ ...current, body: outcome.body, tags: outcome.tags }));
       return;
@@ -161,9 +142,18 @@ export function StreamApp({ services }: StreamAppProps) {
         tags: outcome.tags,
         attachments: draft.attachments
       });
-      setDraft(emptyDraft());
-      await services.index.rebuild("create");
-      setScrollSignal((value) => value + 1);
+      const clearedDraft = emptyDraft();
+      draftRef.current = clearedDraft;
+      setDraft(clearedDraft);
+      try {
+        await services.index.rebuild("create");
+      } catch (caught) {
+        const message = caught instanceof Error ? caught.message : String(caught);
+        new Notice(`Post saved, but the timeline could not refresh: ${message}`);
+      }
+      setNewCount(0);
+      setScrollToNewestSignal((value) => value + 1);
+      showTimeline();
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : String(caught);
       setDraft((current) => ({ ...current, phase: "error", error: message, updatedAt: Date.now() }));
@@ -177,64 +167,73 @@ export function StreamApp({ services }: StreamAppProps) {
 
   return (
     <div className="personal-stream-app">
-      <header className="personal-stream-header">
-        <div className="personal-stream-title-row">
-          <h1>Stream</h1>
-          <button type="button" className={todayOnly ? "is-active" : ""} onClick={() => setTodayOnly((value) => !value)}>Today</button>
-        </div>
-        <div className="personal-stream-filters">
-          <input
-            type="search"
-            placeholder="Search entries"
-            aria-label="Search stream entries"
-            value={query}
-            onChange={(event) => setQuery(event.currentTarget.value)}
-          />
-          <select aria-label="Filter by tag" value={selectedTag} onChange={(event) => setSelectedTag(event.currentTarget.value)}>
-            <option value="">All tags</option>
-            {allTags.map((tag) => <option value={tag} key={tag}>#{tag}</option>)}
-          </select>
-          {searching && <span className="personal-stream-searching">Searching…</span>}
-        </div>
-        {showRecovery && (
-          <div className="personal-stream-recovery-banner">
-            {recovery.pendingDraft && <span>Pending send preserved.</span>}
-            {recovery.orphanAttachmentCount > 0 && <span>{recovery.orphanAttachmentCount} recoverable attachment set(s).</span>}
-            {recovery.malformedEntryCount > 0 && <span>{recovery.malformedEntryCount} malformed entry file(s).</span>}
-          </div>
-        )}
-      </header>
-      <div className="personal-stream-history-wrap">
+      <div className="personal-stream-history-wrap" aria-hidden={composing} inert={composing}>
         <Timeline
           entries={visibleEntries}
-          hasEarlier={filteredEntries.length > visibleEntries.length}
+          hasEarlier={entries.length > visibleEntries.length}
           services={services}
-          scrollSignal={scrollSignal}
+          scrollToNewestSignal={scrollToNewestSignal}
           onLoadEarlier={() => setLoadedCount((count) => count + PAGE_SIZE)}
-          onAtBottomChange={(value) => {
-            atBottom.current = value;
+          onAtNewestChange={(value) => {
+            atNewest.current = value;
             if (value) setNewCount(0);
           }}
         />
         {newCount > 0 && (
           <button type="button" className="personal-stream-new-pill" onClick={() => {
             setNewCount(0);
-            setScrollSignal((value) => value + 1);
-          }}>{newCount} new ↓</button>
+            setScrollToNewestSignal((value) => value + 1);
+          }}>{newCount} new ↑</button>
         )}
       </div>
-      <Composer
-        draft={draft}
-        services={services}
-        sending={sending}
-        error={error}
-        onBodyChange={(body) => mutateDraft((current) => ({ ...current, body }))}
-        onRemoveTag={(tag) => mutateDraft((current) => ({ ...current, tags: current.tags.filter((item) => item !== tag) }))}
-        onAddImages={addImages}
-        onAddAudio={addAudio}
-        onRemoveAttachment={removeAttachment}
-        onSend={send}
-      />
+      <button
+        ref={composeButtonRef}
+        type="button"
+        className={`personal-stream-compose-button${showRecovery ? " has-recovery" : ""}`}
+        aria-label={showRecovery ? "Compose a new post; recovery information is available" : "Compose a new post"}
+        aria-hidden={composing}
+        onClick={() => setComposing(true)}
+        disabled={composing}
+      >
+        <StreamIcon name="plus" />
+      </button>
+      {composing && (
+        <section className="personal-stream-compose-layer" aria-label="Compose a new post">
+          <div className="personal-stream-compose-panel">
+            <div className="personal-stream-compose-header">
+              <button
+                type="button"
+                className="personal-stream-compose-close"
+                aria-label="Close composer; draft is saved"
+                onClick={closeComposer}
+                disabled={sending || composerBusy}
+              >
+                <StreamIcon name="x" />
+              </button>
+            </div>
+            {showRecovery && (
+              <div className="personal-stream-recovery-banner" role="status">
+                {recovery.pendingDraft && <span>Pending send preserved.</span>}
+                {recovery.orphanAttachmentCount > 0 && <span>{recovery.orphanAttachmentCount} recoverable attachment set(s).</span>}
+                {recovery.malformedEntryCount > 0 && <span>{recovery.malformedEntryCount} malformed entry file(s).</span>}
+              </div>
+            )}
+            <Composer
+              draft={draft}
+              services={services}
+              sending={sending}
+              error={error}
+              onBodyChange={(body) => mutateDraft((current) => ({ ...current, body }))}
+              onRemoveTag={(tag) => mutateDraft((current) => ({ ...current, tags: current.tags.filter((item) => item !== tag) }))}
+              onAddImages={addImages}
+              onAddAudio={addAudio}
+              onRemoveAttachment={removeAttachment}
+              onSend={send}
+              onBusyChange={setComposerBusy}
+            />
+          </div>
+        </section>
+      )}
     </div>
   );
 }

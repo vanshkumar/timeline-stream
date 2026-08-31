@@ -21,9 +21,9 @@ describe("slash commands", () => {
     });
   });
 
-  it("supports navigation, literal slashes, and safe errors", () => {
-    expect(commands.interpret("/today", [])).toEqual({ kind: "action", action: "today" });
+  it("supports literal slashes and safe errors", () => {
     expect(commands.interpret("//today", [])).toEqual({ kind: "commit", body: "/today", tags: [] });
+    expect(commands.interpret("/today", []).kind).toBe("error");
     expect(commands.interpret("/unknown", []).kind).toBe("error");
     expect(commands.interpret("/tag bad?tag\nBody", []).kind).toBe("error");
   });

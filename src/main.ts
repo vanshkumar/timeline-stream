@@ -87,6 +87,5 @@ export default class PersonalStreamPlugin extends Plugin {
       await leaf.setViewState({ type: STREAM_VIEW_TYPE, active: true });
     }
     await this.app.workspace.revealLeaf(leaf);
-    if (leaf.view instanceof StreamView) leaf.view.focusComposer();
   }
 }

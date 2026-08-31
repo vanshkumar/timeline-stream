@@ -1,6 +1,7 @@
 import { Notice } from "obsidian";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { DraftState, StoredAttachment } from "../domain/entry";
+import { StreamIcon } from "./StreamIcon";
 import type { StreamServices } from "./types";
 
 export interface ComposerProps {
@@ -14,6 +15,7 @@ export interface ComposerProps {
   onAddAudio(blob: Blob): Promise<void>;
   onRemoveAttachment(attachment: StoredAttachment): void;
   onSend(): Promise<void>;
+  onBusyChange(busy: boolean): void;
 }
 
 function isHeic(path: string): boolean {
@@ -50,13 +52,15 @@ export function Composer({
   onAddImages,
   onAddAudio,
   onRemoveAttachment,
-  onSend
+  onSend,
+  onBusyChange
 }: ComposerProps) {
   const [mediaBusy, setMediaBusy] = useState(false);
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const mountedRef = useRef(true);
 
   useLayoutEffect(() => {
     const input = inputRef.current;
@@ -71,8 +75,17 @@ export function Composer({
     return () => window.clearInterval(timer);
   }, [recording]);
 
-  useEffect(() => () => {
-    void services.audioRecorder.cancel();
+  useEffect(() => {
+    onBusyChange(mediaBusy || recording);
+    return () => onBusyChange(false);
+  }, [mediaBusy, onBusyChange, recording]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      void services.audioRecorder.cancel();
+    };
   }, [services.audioRecorder]);
 
   const suggestions = useMemo(() => {
@@ -109,19 +122,28 @@ export function Composer({
   };
 
   const startRecording = async () => {
+    setMediaBusy(true);
     setMediaError(null);
     try {
       await services.audioRecorder.start(
         (blob) => void finishRecording(blob),
         (caught) => {
+          if (!mountedRef.current) return;
           setRecording(false);
           setMediaError(caught.message);
         }
       );
+      if (!mountedRef.current) {
+        await services.audioRecorder.cancel();
+        return;
+      }
       setRecordingSeconds(0);
       setRecording(true);
     } catch (caught) {
+      if (!mountedRef.current) return;
       setMediaError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      if (mountedRef.current) setMediaBusy(false);
     }
   };
 
@@ -138,92 +160,123 @@ export function Composer({
   };
 
   const cancelRecording = async () => {
-    await services.audioRecorder.cancel();
+    setMediaBusy(true);
     setRecording(false);
     setRecordingSeconds(0);
-  };
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-      event.preventDefault();
-      void onSend();
+    try {
+      await services.audioRecorder.cancel();
+    } finally {
+      if (mountedRef.current) setMediaBusy(false);
     }
   };
 
   const canSend = !sending && !mediaBusy && !recording && (draft.body.trim().length > 0 || draft.attachments.length > 0);
 
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      if (event.nativeEvent.isComposing || !canSend) return;
+      event.preventDefault();
+      void onSend();
+    }
+  };
+
+  useEffect(() => {
+    if (sending || !error) return;
+    const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [error, sending]);
+
   return (
     <div className="personal-stream-composer">
-      {draft.tags.length > 0 && (
-        <div className="personal-stream-draft-tags">
-          {draft.tags.map((tag) => (
-            <button type="button" key={tag} onClick={() => onRemoveTag(tag)} aria-label={`Remove tag ${tag}`}>#{tag} ×</button>
-          ))}
+      <div className="personal-stream-avatar personal-stream-composer-avatar" aria-hidden="true">🧠</div>
+      <div className="personal-stream-composer-content">
+        {draft.tags.length > 0 && (
+          <div className="personal-stream-draft-tags">
+            {draft.tags.map((tag) => (
+              <button type="button" key={tag} onClick={() => onRemoveTag(tag)} aria-label={`Remove tag ${tag}`}>#{tag} ×</button>
+            ))}
+          </div>
+        )}
+        {draft.attachments.length > 0 && (
+          <div className="personal-stream-draft-attachments">
+            {draft.attachments.map((attachment) => (
+              <AttachmentChip
+                key={attachment.path}
+                attachment={attachment}
+                services={services}
+                onRemove={() => {
+                  onRemoveAttachment(attachment);
+                  new Notice("Removed from draft; the captured file was retained for recovery.");
+                }}
+              />
+            ))}
+          </div>
+        )}
+        <div className="personal-stream-composer-input-wrap">
+          <textarea
+            ref={inputRef}
+            className="personal-stream-composer-input"
+            aria-label="Write to your personal stream"
+            placeholder="Write to your stream…"
+            rows={1}
+            autoFocus
+            value={draft.body}
+            onChange={(event) => onBodyChange(event.currentTarget.value)}
+            onKeyDown={handleKeyDown}
+            disabled={sending}
+          />
         </div>
-      )}
-      {draft.attachments.length > 0 && (
-        <div className="personal-stream-draft-attachments">
-          {draft.attachments.map((attachment) => (
-            <AttachmentChip
-              key={attachment.path}
-              attachment={attachment}
-              services={services}
-              onRemove={() => {
-                onRemoveAttachment(attachment);
-                new Notice("Removed from draft; the captured file was retained for recovery.");
-              }}
-            />
-          ))}
+        {suggestions.length > 0 && (
+          <div className="personal-stream-command-suggestions">
+            {suggestions.map((command) => (
+              <button type="button" key={command.name} onClick={() => onBodyChange(`/${command.name} `)}>
+                <strong>/{command.name}</strong><span>{command.description}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {(error || mediaError) && <div className="personal-stream-inline-error" role="alert">{error ?? mediaError}</div>}
+        {recording && (
+          <div className="personal-stream-recording">
+            <span className="personal-stream-recording-dot" /> Recording {Math.floor(recordingSeconds / 60)}:{String(recordingSeconds % 60).padStart(2, "0")}
+            <button type="button" onClick={() => void cancelRecording()} disabled={mediaBusy || sending}>Cancel</button>
+          </div>
+        )}
+        <div className="personal-stream-composer-actions">
+          <button
+            type="button"
+            className="personal-stream-composer-tool"
+            onClick={() => void pickImages(false)}
+            disabled={mediaBusy || recording || sending}
+            aria-label="Choose photos"
+          >
+            <StreamIcon name="image" />
+            <span className="personal-stream-composer-action-label">Photos</span>
+          </button>
+          <button
+            type="button"
+            className="personal-stream-composer-tool"
+            onClick={() => void pickImages(true)}
+            disabled={mediaBusy || recording || sending}
+            aria-label="Take photo"
+          >
+            <StreamIcon name="camera" />
+            <span className="personal-stream-composer-action-label">Camera</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => void (recording ? stopRecording() : startRecording())}
+            disabled={mediaBusy || sending || (!recording && !services.audioRecorder.supported)}
+            aria-label={recording ? "Stop recording" : "Record audio"}
+            className={`personal-stream-composer-tool${recording ? " is-recording" : ""}`}
+          >
+            <StreamIcon name={recording ? "square" : "mic"} />
+            <span className="personal-stream-composer-action-label">{recording ? "Stop" : "Audio"}</span>
+          </button>
+          <button type="button" className="personal-stream-send mod-cta" onClick={() => void onSend()} disabled={!canSend} aria-label="Send entry">
+            {sending ? "…" : "Post"}
+          </button>
         </div>
-      )}
-      <div className="personal-stream-composer-input-wrap">
-        <textarea
-          ref={inputRef}
-          className="personal-stream-composer-input"
-          aria-label="Write to your personal stream"
-          placeholder="Write to your stream…"
-          rows={1}
-          value={draft.body}
-          onChange={(event) => onBodyChange(event.currentTarget.value)}
-          onKeyDown={handleKeyDown}
-          disabled={sending}
-        />
-      </div>
-      {suggestions.length > 0 && (
-        <div className="personal-stream-command-suggestions">
-          {suggestions.map((command) => (
-            <button type="button" key={command.name} onClick={() => onBodyChange(`/${command.name}${command.name === "today" ? "" : " "}`)}>
-              <strong>/{command.name}</strong><span>{command.description}</span>
-            </button>
-          ))}
-        </div>
-      )}
-      {(error || mediaError) && <div className="personal-stream-inline-error">{error ?? mediaError}</div>}
-      {recording && (
-        <div className="personal-stream-recording">
-          <span className="personal-stream-recording-dot" /> Recording {Math.floor(recordingSeconds / 60)}:{String(recordingSeconds % 60).padStart(2, "0")}
-          <button type="button" onClick={() => void cancelRecording()}>Cancel</button>
-        </div>
-      )}
-      <div className="personal-stream-composer-actions">
-        <button type="button" onClick={() => void pickImages(false)} disabled={mediaBusy || recording || sending} aria-label="Choose photos">
-          ＋ Photos
-        </button>
-        <button type="button" onClick={() => void pickImages(true)} disabled={mediaBusy || recording || sending} aria-label="Take photo">
-          📷 Camera
-        </button>
-        <button
-          type="button"
-          onClick={() => void (recording ? stopRecording() : startRecording())}
-          disabled={mediaBusy || sending || (!recording && !services.audioRecorder.supported)}
-          aria-label={recording ? "Stop recording" : "Record audio"}
-          className={recording ? "is-recording" : ""}
-        >
-          {recording ? "■ Stop" : "🎙 Audio"}
-        </button>
-        <button type="button" className="personal-stream-send mod-cta" onClick={() => void onSend()} disabled={!canSend} aria-label="Send entry">
-          {sending ? "…" : "↑"}
-        </button>
       </div>
     </div>
   );

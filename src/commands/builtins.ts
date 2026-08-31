@@ -38,16 +38,5 @@ export function registerBuiltins(registry: SlashCommandRegistry): SlashCommandRe
       return { kind: "commit", body, tags: existingTags };
     }
   });
-
-  registry.register({
-    name: "today",
-    description: "Show entries captured today",
-    usage: "/today",
-    run: ({ argumentsText, payload }) =>
-      argumentsText || payload
-        ? { kind: "error", message: "/today does not accept text." }
-        : { kind: "action", action: "today" }
-  });
-
   return registry;
 }

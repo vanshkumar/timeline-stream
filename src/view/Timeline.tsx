@@ -8,9 +8,9 @@ export interface TimelineProps {
   entries: EntrySummary[];
   hasEarlier: boolean;
   services: StreamServices;
-  scrollSignal: number;
+  scrollToNewestSignal: number;
   onLoadEarlier(): void;
-  onAtBottomChange(atBottom: boolean): void;
+  onAtNewestChange(atNewest: boolean): void;
 }
 
 function dayLabel(dateKey: string): string {
@@ -23,46 +23,24 @@ function dayLabel(dateKey: string): string {
   }).format(date);
 }
 
-export function Timeline({ entries, hasEarlier, services, scrollSignal, onLoadEarlier, onAtBottomChange }: TimelineProps) {
+export function Timeline({ entries, hasEarlier, services, scrollToNewestSignal, onLoadEarlier, onAtNewestChange }: TimelineProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const initialized = useRef(false);
-  const preserveHeight = useRef<number | null>(null);
 
   useLayoutEffect(() => {
     const container = containerRef.current;
-    if (!container || entries.length === 0) return;
-    if (!initialized.current) {
-      container.scrollTop = container.scrollHeight;
-      initialized.current = true;
-    } else if (preserveHeight.current !== null) {
-      container.scrollTop += container.scrollHeight - preserveHeight.current;
-      preserveHeight.current = null;
-    }
-  }, [entries]);
-
-  useLayoutEffect(() => {
-    const container = containerRef.current;
-    if (container) container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
-  }, [scrollSignal]);
-
-  const loadEarlier = () => {
-    if (containerRef.current) preserveHeight.current = containerRef.current.scrollHeight;
-    onLoadEarlier();
-  };
+    if (container) container.scrollTo({ top: 0, behavior: "smooth" });
+  }, [scrollToNewestSignal]);
 
   const handleScroll = () => {
     const element = containerRef.current;
     if (!element) return;
-    onAtBottomChange(element.scrollHeight - element.scrollTop - element.clientHeight < 80);
+    onAtNewestChange(element.scrollTop < 80);
   };
 
   let previousDay = "";
   return (
     <div className="personal-stream-timeline" ref={containerRef} onScroll={handleScroll}>
-      {hasEarlier && (
-        <button type="button" className="personal-stream-load-earlier" onClick={loadEarlier}>Load earlier</button>
-      )}
-      {entries.length === 0 && <div className="personal-stream-empty">Nothing here yet. Send yourself the first note.</div>}
+      {entries.length === 0 && <div className="personal-stream-empty">Nothing here yet. Use + to post your first note.</div>}
       {entries.map((entry) => {
         const day = capturedLocalDate(entry.createdAt);
         const divider = day !== previousDay;
@@ -74,6 +52,9 @@ export function Timeline({ entries, hasEarlier, services, scrollSignal, onLoadEa
           </div>
         );
       })}
+      {hasEarlier && (
+        <button type="button" className="personal-stream-load-earlier" onClick={onLoadEarlier}>Load earlier</button>
+      )}
     </div>
   );
 }

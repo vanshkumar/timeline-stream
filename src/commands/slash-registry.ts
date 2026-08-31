@@ -3,7 +3,6 @@ import { normalizeTags } from "../storage/entry-codec";
 export type CommandOutcome =
   | { kind: "commit"; body: string; tags: string[] }
   | { kind: "draft"; body: string; tags: string[] }
-  | { kind: "action"; action: "today" }
   | { kind: "error"; message: string };
 
 export interface SlashCommandInput {
