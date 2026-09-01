@@ -1,10 +1,31 @@
 import { App, TFile, normalizePath } from "obsidian";
+import {
+  attachmentFolderForEntry,
+  decideAttachmentCleanup,
+  hasLiveResolvedReference,
+  type AttachmentCleanupDecision,
+  type AttachmentConsumerSnapshot
+} from "../domain/attachment-lifecycle";
+import { ENTRY_ROOT } from "../domain/entry";
 import { createEntryIdentity } from "../domain/identity";
 import type { CommitRequest, EntryIdentity, ParsedEntry, StoredAttachment } from "../domain/entry";
+import type { OwnedAttachmentTrasher } from "./attachment-store";
 import { EntryCodec, InvalidEntryError } from "./entry-codec";
 import { ensureFolder } from "./folders";
 
 export class ExistingEntryConflictError extends Error {}
+export class PartialEntryDeletionError extends Error {}
+
+export type AttachmentTrashDisposition =
+  | Exclude<AttachmentCleanupDecision, "trash">
+  | "trashed"
+  | "absent"
+  | "retain-unsafe"
+  | "retain-unreadable";
+
+export interface TrashEntryResult {
+  attachmentDisposition: AttachmentTrashDisposition;
+}
 
 function attachmentEmbeds(attachments: StoredAttachment[]): string {
   return attachments.map((attachment) => `![[${attachment.path}]]`).join("\n\n");
@@ -18,10 +39,15 @@ function parentPath(path: string): string {
   return path.slice(0, Math.max(0, path.lastIndexOf("/")));
 }
 
+function isStreamEntryPath(path: string): boolean {
+  return path.startsWith(`${ENTRY_ROOT}/`) && path.toLowerCase().endsWith(".md");
+}
+
 export class StreamRepository {
   constructor(
     private readonly app: App,
-    readonly codec: EntryCodec
+    readonly codec: EntryCodec,
+    private readonly attachments: OwnedAttachmentTrasher
   ) {}
 
   async commit(request: CommitRequest): Promise<ParsedEntry> {
@@ -90,9 +116,73 @@ export class StreamRepository {
     return this.codec.parse(file.path, await this.app.vault.read(file));
   }
 
-  async trash(fileOrPath: TFile | string): Promise<void> {
+  async trash(fileOrPath: TFile | string): Promise<TrashEntryResult> {
     const file = typeof fileOrPath === "string" ? this.fileAt(fileOrPath) : fileOrPath;
+    const originalPath = file.path;
+    const document = await this.readDocument(file);
+    const owner = {
+      id: document.metadata.stream_id,
+      createdAt: document.metadata.stream_created_at
+    };
+    const attachmentFolder = attachmentFolderForEntry(owner);
+
     await this.app.fileManager.trashFile(file);
+
+    if (!attachmentFolder) {
+      return { attachmentDisposition: "retain-unsafe" };
+    }
+    if (!this.app.vault.getAbstractFileByPath(attachmentFolder)) {
+      return { attachmentDisposition: "absent" };
+    }
+
+    const survivors: AttachmentConsumerSnapshot[] = [];
+    for (const survivor of this.app.vault.getMarkdownFiles()) {
+      if (survivor.path === originalPath || survivor.path.startsWith(".trash/")) continue;
+      let raw: string;
+      try {
+        raw = await this.app.vault.cachedRead(survivor);
+      } catch {
+        return { attachmentDisposition: "retain-unreadable" };
+      }
+
+      let id: string | undefined;
+      if (isStreamEntryPath(survivor.path)) {
+        try {
+          id = this.codec.parse(survivor.path, raw).metadata.stream_id;
+        } catch {
+          // A malformed entry can still retain an attachment through an exact path reference below.
+        }
+      }
+      survivors.push(id === undefined ? { raw } : { id, raw });
+    }
+
+    const decision = decideAttachmentCleanup(owner.id, attachmentFolder, survivors);
+    if (decision !== "trash") {
+      return { attachmentDisposition: decision };
+    }
+
+    const liveSourcePaths = new Set(
+      this.app.vault.getMarkdownFiles()
+        .map((candidate) => candidate.path)
+        .filter((path) => path !== originalPath && !path.startsWith(".trash/"))
+    );
+    if (
+      hasLiveResolvedReference(attachmentFolder, liveSourcePaths, this.app.metadataCache.resolvedLinks) ||
+      hasLiveResolvedReference(attachmentFolder, liveSourcePaths, this.app.metadataCache.unresolvedLinks ?? {})
+    ) {
+      return { attachmentDisposition: "retain-reference" };
+    }
+
+    try {
+      const attachmentDisposition = await this.attachments.trashOwnedBy(owner);
+      return { attachmentDisposition };
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : String(caught);
+      throw new PartialEntryDeletionError(
+        `The entry was moved to trash, but its attachments could not be moved: ${message}`,
+        { cause: caught }
+      );
+    }
   }
 
   async open(fileOrPath: TFile | string): Promise<void> {

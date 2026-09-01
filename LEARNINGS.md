@@ -9,6 +9,16 @@
 
 ## Patterns and Preferences
 
+**[2026-09-01] — Entry attachment deletion**
+- Observation: Attachment folders are normally owned by one stream ID, but iCloud identity variants share that ID and duplicated entries currently keep links into the original owner's folder.
+- Action: Trash the entry note first, then trash only its validated owner folder after checking surviving Markdown files and live metadata references; recovery scans must treat referenced owner IDs as live.
+- Confidence: high
+
+**[2026-09-01] — Focused Vitest invocation**
+- Observation: `pnpm test -- <test paths>` expands to `vitest run -- <test paths>` and runs the full suite in this workspace, while `pnpm exec vitest run <test paths>` runs only the requested files.
+- Action: Use `mise exec -- pnpm exec vitest run <test paths>` for focused verification and reserve `mise exec -- pnpm test` for the complete suite.
+- Confidence: high
+
 **[2026-08-30] — Internal links in rendered cards**
 - Observation: `MarkdownRenderer.render` creates and styles internal-link anchors but does not attach Markdown preview navigation behavior inside the React-backed custom `ItemView`.
 - Action: Delegate card `click` and `auxclick` events for `a.internal-link` to `Workspace.openLinkText`, passing the saved entry path and `Keymap.isModEvent`, and bind the handlers through the renderer component lifecycle.

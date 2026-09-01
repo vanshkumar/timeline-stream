@@ -1,4 +1,5 @@
-import { App, TFile, normalizePath } from "obsidian";
+import { App, TFile, TFolder, normalizePath } from "obsidian";
+import { attachmentFolderForEntry } from "../domain/attachment-lifecycle";
 import { createAttachmentPath } from "../domain/identity";
 import type { AttachmentKind, EntryIdentity, StoredAttachment } from "../domain/entry";
 import { ensureFolder } from "./folders";
@@ -77,6 +78,21 @@ export class AttachmentStore {
     }
   }
 
+  async trashOwnedBy(owner: Pick<EntryIdentity, "id" | "createdAt">): Promise<"trashed" | "absent"> {
+    const path = attachmentFolderForEntry(owner);
+    if (!path) {
+      throw new Error("Refusing to trash attachments for an entry with an unsafe identity.");
+    }
+
+    const existing = this.app.vault.getAbstractFileByPath(path);
+    if (!existing) return "absent";
+    if (!(existing instanceof TFolder)) {
+      throw new Error(`Expected an attachment folder at ${path}.`);
+    }
+    await this.app.fileManager.trashFile(existing);
+    return "trashed";
+  }
+
   resourcePath(path: string): string | null {
     const file = this.app.vault.getAbstractFileByPath(path);
     return file instanceof TFile ? this.app.vault.getResourcePath(file) : null;
@@ -84,3 +100,4 @@ export class AttachmentStore {
 }
 
 export type AttachmentVerifier = Pick<AttachmentStore, "verifyAll">;
+export type OwnedAttachmentTrasher = Pick<AttachmentStore, "trashOwnedBy">;

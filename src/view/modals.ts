@@ -12,9 +12,9 @@ class ConfirmDeleteModal extends Modal {
   }
 
   onOpen(): void {
-    this.titleEl.setText("Move entry to trash?");
+    this.titleEl.setText("Move entry and attachments to trash?");
     this.contentEl.createEl("p", {
-      text: `${this.label} will be moved using your Obsidian trash preference. Its attachments will be retained.`
+      text: `${this.label} and attachments used only by this entry will be moved using your Obsidian trash preference.`
     });
     new Setting(this.contentEl)
       .addButton((button) =>

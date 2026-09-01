@@ -23,8 +23,8 @@ export default class PersonalStreamPlugin extends Plugin {
 
   async onload(): Promise<void> {
     const codec = new EntryCodec();
-    const repository = new StreamRepository(this.app, codec);
     const attachments = new AttachmentStore(this.app);
+    const repository = new StreamRepository(this.app, codec, attachments);
     const drafts = new DraftStore(this.app.vault.getName());
     const index = new StreamIndex(this.app.vault, this.app.metadataCache, codec);
     const search = new SearchService(repository);
@@ -42,7 +42,7 @@ export default class PersonalStreamPlugin extends Plugin {
       commands,
       imagePicker: new ImagePicker(),
       audioRecorder,
-      recovery: new RecoveryService(this.app.vault)
+      recovery: new RecoveryService(this.app.vault, this.app.metadataCache)
     };
 
     this.registerView(STREAM_VIEW_TYPE, (leaf) => new StreamView(leaf, this.services));

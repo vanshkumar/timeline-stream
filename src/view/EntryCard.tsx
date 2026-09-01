@@ -59,9 +59,15 @@ export function EntryCard({ summary, services }: EntryCardProps) {
     if (!(await confirmDelete(services.app, timeLabel(summary.createdAt)))) return;
     try {
       await services.repository.trash(summary.path);
-      await services.index.rebuild("change");
     } catch (caught) {
       new Notice(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      try {
+        await services.index.rebuild("change");
+      } catch (caught) {
+        const message = caught instanceof Error ? caught.message : String(caught);
+        new Notice(`The timeline could not refresh after deletion: ${message}`);
+      }
     }
   };
 

@@ -90,6 +90,6 @@ Audio recording depends on the browser media APIs exposed by Obsidian's iOS WebV
 
 - Attachments are written before the Markdown note; the note acts as the commit marker.
 - Failed sends retain their draft and attachment paths for retry.
-- Deleting an entry moves only its Markdown file through Obsidian's configured trash behavior. Attachments are retained.
+- Deleting an entry from Personal Stream moves its Markdown file and unshared attachment folder through Obsidian's configured trash behavior. Attachments referenced by another live note are retained.
 - iCloud conflicts are surfaced and never automatically merged or deleted.
 - iCloud sync is not a backup. Keep a downloaded Mac copy and use Obsidian File Recovery plus a separate backup.
