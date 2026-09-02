@@ -5,12 +5,26 @@ import type { EntryCommitter } from "../storage/stream-repository";
 
 export class CaptureCoordinator {
   private inFlight: Promise<ParsedEntry> | null = null;
+  private lastCompleted: ParsedEntry | null = null;
+  private readonly listeners = new Set<(entry: ParsedEntry) => void>();
 
   constructor(
     private readonly repository: EntryCommitter,
     private readonly attachments: AttachmentVerifier,
     private readonly drafts: DraftPersistence
   ) {}
+
+  subscribe(listener: (entry: ParsedEntry) => void): () => void {
+    this.listeners.add(listener);
+    if (this.lastCompleted) {
+      try {
+        listener(this.lastCompleted);
+      } catch {
+        // Completion replay is advisory view synchronization.
+      }
+    }
+    return () => this.listeners.delete(listener);
+  }
 
   submit(request: CommitRequest): Promise<ParsedEntry> {
     if (this.inFlight) {
@@ -41,6 +55,14 @@ export class CaptureCoordinator {
       await this.attachments.verifyAll(request.attachments);
       const entry = await this.repository.commit(request);
       this.drafts.clear();
+      this.lastCompleted = entry;
+      for (const listener of this.listeners) {
+        try {
+          listener(entry);
+        } catch {
+          // A view listener cannot turn a durable commit into a failed send.
+        }
+      }
       return entry;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

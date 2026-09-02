@@ -33,6 +33,8 @@ function parentPath(path: string): string {
 }
 
 export class AttachmentStore {
+  private readonly freshAttachments = new Map<string, { resourcePath: string; size: number }>();
+
   constructor(private readonly app: App) {}
 
   async writeFile(identity: EntryIdentity, kind: AttachmentKind, file: File | Blob, name = "attachment"): Promise<StoredAttachment> {
@@ -60,6 +62,10 @@ export class AttachmentStore {
     if (stored.stat.size !== bytes.byteLength) {
       throw new Error(`Could not verify attachment ${normalizedPath}.`);
     }
+    this.freshAttachments.set(normalizedPath, {
+      resourcePath: this.app.vault.getResourcePath(stored),
+      size: stored.stat.size
+    });
     return {
       id,
       kind,
@@ -71,10 +77,21 @@ export class AttachmentStore {
 
   async verifyAll(attachments: StoredAttachment[]): Promise<void> {
     for (const attachment of attachments) {
-      const file = this.app.vault.getAbstractFileByPath(attachment.path);
-      if (!(file instanceof TFile) || file.stat.size !== attachment.size) {
+      const path = normalizePath(attachment.path);
+      const file = this.app.vault.getAbstractFileByPath(path);
+      const fresh = this.freshAttachments.get(path);
+      const verifiedFromVault = file instanceof TFile && file.stat.size === attachment.size;
+      const verifiedFromWrite = !file && fresh?.size === attachment.size;
+      if (!verifiedFromVault && !verifiedFromWrite) {
         throw new Error(`Attachment is missing or incomplete: ${attachment.path}`);
       }
+      if (verifiedFromVault) this.freshAttachments.delete(path);
+    }
+  }
+
+  releaseFresh(attachments: StoredAttachment[]): void {
+    for (const attachment of attachments) {
+      this.freshAttachments.delete(normalizePath(attachment.path));
     }
   }
 
@@ -94,8 +111,13 @@ export class AttachmentStore {
   }
 
   resourcePath(path: string): string | null {
-    const file = this.app.vault.getAbstractFileByPath(path);
-    return file instanceof TFile ? this.app.vault.getResourcePath(file) : null;
+    const normalizedPath = normalizePath(path);
+    const file = this.app.vault.getAbstractFileByPath(normalizedPath);
+    if (file instanceof TFile) {
+      this.freshAttachments.delete(normalizedPath);
+      return this.app.vault.getResourcePath(file);
+    }
+    return this.freshAttachments.get(normalizedPath)?.resourcePath ?? null;
   }
 }
 

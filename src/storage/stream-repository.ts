@@ -44,6 +44,8 @@ function isStreamEntryPath(path: string): boolean {
 }
 
 export class StreamRepository {
+  private readonly freshDocuments = new Map<string, ParsedEntry>();
+
   constructor(
     private readonly app: App,
     readonly codec: EntryCodec,
@@ -72,14 +74,18 @@ export class StreamRepository {
 
     await ensureFolder(this.app.vault, parentPath(notePath));
     const file = await this.app.vault.create(notePath, content);
-    const verified = await this.app.vault.read(file);
-    if (verified !== content) {
-      throw new Error(`Could not verify the new entry at ${notePath}.`);
-    }
-    return this.codec.parse(notePath, verified);
+    const committed = this.codec.parse(file.path, content);
+    this.freshDocuments.set(file.path, committed);
+    return committed;
   }
 
   async readDocument(fileOrPath: TFile | string): Promise<ParsedEntry> {
+    const path = normalizePath(typeof fileOrPath === "string" ? fileOrPath : fileOrPath.path);
+    const fresh = this.freshDocuments.get(path);
+    if (fresh) {
+      this.freshDocuments.delete(path);
+      return fresh;
+    }
     const file = typeof fileOrPath === "string" ? this.fileAt(fileOrPath) : fileOrPath;
     const raw = await this.app.vault.cachedRead(file);
     return this.codec.parse(file.path, raw);
@@ -91,6 +97,7 @@ export class StreamRepository {
 
   async editBody(fileOrPath: TFile | string, baseline: string, nextBody: string): Promise<ParsedEntry> {
     const file = typeof fileOrPath === "string" ? this.fileAt(fileOrPath) : fileOrPath;
+    this.freshDocuments.delete(file.path);
     await this.app.vault.process(file, (current) => this.codec.replaceBodyIfUnchanged(current, baseline, nextBody));
     return this.readDocument(file);
   }

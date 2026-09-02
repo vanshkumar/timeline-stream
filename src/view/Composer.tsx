@@ -36,7 +36,9 @@ function AttachmentChip({ attachment, services, onRemove }: {
       )}
       {attachment.kind === "audio" && resource && <audio controls preload="none" src={resource} />}
       <div className="personal-stream-attachment-label">
-        {isHeic(attachment.path) ? "HEIC saved; preview may be unavailable" : attachment.kind === "image" ? "Image" : "Audio"}
+        {isHeic(attachment.path)
+          ? "HEIC photo attached; preview unavailable"
+          : attachment.kind === "image" ? "Photo attached" : "Audio attached"}
       </div>
       <button type="button" aria-label="Remove attachment from draft" onClick={onRemove}>×</button>
     </div>
@@ -61,7 +63,10 @@ export function Composer({
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [mediaError, setMediaError] = useState<string | null>(null);
+  const [mediaStatus, setMediaStatus] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const attachmentsRef = useRef<HTMLDivElement>(null);
+  const previousAttachmentCountRef = useRef(draft.attachments.length);
   const mountedRef = useRef(true);
 
   useLayoutEffect(() => {
@@ -77,6 +82,16 @@ export function Composer({
     input.focus();
     input.setSelectionRange(input.value.length, input.value.length);
   }, [focusRequestId]);
+
+  useLayoutEffect(() => {
+    const previousCount = previousAttachmentCountRef.current;
+    previousAttachmentCountRef.current = draft.attachments.length;
+    if (draft.attachments.length <= previousCount) return;
+    const frame = window.requestAnimationFrame(() => {
+      attachmentsRef.current?.lastElementChild?.scrollIntoView({ block: "nearest", inline: "end" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [draft.attachments.length]);
 
   useEffect(() => {
     if (!recording) return;
@@ -107,13 +122,25 @@ export function Composer({
   const pickImages = async (camera: boolean) => {
     setMediaBusy(true);
     setMediaError(null);
+    setMediaStatus(camera ? "Opening camera…" : "Opening photos…");
     try {
       const files = await services.imagePicker.pick(camera);
-      if (files.length > 0) await onAddImages(files);
+      if (files.length > 0) {
+        setMediaStatus(files.length === 1 ? "Attaching photo…" : `Attaching ${files.length} photos…`);
+        await onAddImages(files);
+        if (mountedRef.current) {
+          setMediaStatus(files.length === 1 ? "Photo attached." : `${files.length} photos attached.`);
+        }
+      } else if (mountedRef.current) {
+        setMediaStatus(null);
+      }
     } catch (caught) {
+      setMediaStatus(null);
       setMediaError(caught instanceof Error ? caught.message : String(caught));
     } finally {
-      setMediaBusy(false);
+      if (mountedRef.current) {
+        setMediaBusy(false);
+      }
     }
   };
 
@@ -207,13 +234,19 @@ export function Composer({
           </div>
         )}
         {draft.attachments.length > 0 && (
-          <div className="personal-stream-draft-attachments">
+          <div
+            ref={attachmentsRef}
+            className="personal-stream-draft-attachments"
+            aria-label="Attached media"
+            aria-live="polite"
+          >
             {draft.attachments.map((attachment) => (
               <AttachmentChip
                 key={attachment.path}
                 attachment={attachment}
                 services={services}
                 onRemove={() => {
+                  setMediaStatus(null);
                   onRemoveAttachment(attachment);
                   new Notice("Removed from draft; the captured file was retained for recovery.");
                 }}
@@ -221,6 +254,7 @@ export function Composer({
             ))}
           </div>
         )}
+        <div className="personal-stream-media-status" role="status" aria-atomic="true">{mediaStatus}</div>
         <div className="personal-stream-composer-input-wrap">
           <textarea
             ref={inputRef}

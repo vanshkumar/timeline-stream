@@ -25,10 +25,17 @@ function inlineTags(cache: ReturnType<MetadataCache["getFileCache"]>): string[] 
   return cache?.tags?.map((tag) => tag.tag.replace(/^#/, "")) ?? [];
 }
 
+function compareSummaries(left: EntrySummary, right: EntrySummary): number {
+  const byTime = Date.parse(left.createdAt) - Date.parse(right.createdAt);
+  return byTime || left.id.localeCompare(right.id) || left.path.localeCompare(right.path);
+}
+
 export class StreamIndex {
   private summaries: EntrySummary[] = [];
+  private readonly unindexedCommitted = new Map<string, EntrySummary>();
   private readonly listeners = new Set<IndexListener>();
   private rebuildTimer: number | null = null;
+  private rebuildGeneration = 0;
   private queuedReason: IndexChangeReason = "change";
   malformedEntryCount = 0;
 
@@ -46,6 +53,18 @@ export class StreamIndex {
     return new Set(this.summaries.map((entry) => entry.id));
   }
 
+  recordCommitted(summary: EntrySummary): void {
+    for (const [path, pending] of this.unindexedCommitted) {
+      if (pending.id === summary.id) this.unindexedCommitted.delete(path);
+    }
+    this.unindexedCommitted.set(summary.path, summary);
+    this.summaries = [
+      ...this.summaries.filter((entry) => entry.path !== summary.path && entry.id !== summary.id),
+      summary
+    ].sort(compareSummaries);
+    this.listeners.forEach((listener) => listener("create"));
+  }
+
   subscribe(listener: IndexListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -60,10 +79,16 @@ export class StreamIndex {
         if (file instanceof TFile && isEntryPath(file.path)) this.schedule("change");
       }),
       this.vault.on("delete", (file) => {
-        if (isEntryPath(file.path)) this.schedule("change");
+        if (isEntryPath(file.path)) {
+          this.unindexedCommitted.delete(file.path);
+          this.schedule("change");
+        }
       }),
       this.vault.on("rename", (file, oldPath) => {
-        if (isEntryPath(file.path) || isEntryPath(oldPath)) this.schedule("change");
+        if (isEntryPath(file.path) || isEntryPath(oldPath)) {
+          this.unindexedCommitted.delete(oldPath);
+          this.schedule("change");
+        }
       }),
       this.metadataCache.on("changed", (file) => {
         if (isEntryPath(file.path)) this.schedule("change");
@@ -76,6 +101,7 @@ export class StreamIndex {
   }
 
   async rebuild(reason: IndexChangeReason = "rebuild"): Promise<void> {
+    const generation = ++this.rebuildGeneration;
     if (this.rebuildTimer !== null) {
       window.clearTimeout(this.rebuildTimer);
       this.rebuildTimer = null;
@@ -125,10 +151,15 @@ export class StreamIndex {
       }
     }
 
-    resolved.sort((left, right) => {
-      const byTime = Date.parse(left.createdAt) - Date.parse(right.createdAt);
-      return byTime || left.id.localeCompare(right.id) || left.path.localeCompare(right.path);
-    });
+    if (generation !== this.rebuildGeneration) return;
+
+    const indexedPaths = new Set(provisional.map((item) => item.summary.path));
+    const indexedIds = new Set(provisional.map((item) => item.summary.id));
+    for (const [path, summary] of this.unindexedCommitted) {
+      if (indexedPaths.has(path) || indexedIds.has(summary.id)) this.unindexedCommitted.delete(path);
+      else resolved.push(summary);
+    }
+    resolved.sort(compareSummaries);
     this.summaries = resolved;
     this.malformedEntryCount = malformed;
     this.listeners.forEach((listener) => listener(reason));

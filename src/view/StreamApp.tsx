@@ -6,6 +6,10 @@ import type { RecoveryReport } from "../storage/recovery-service";
 import { Timeline } from "./Timeline";
 import { Composer } from "./Composer";
 import { appendGeneratedContent, type ComposeRequestBridge } from "./compose-request-bridge";
+import {
+  beginTimelineRefresh,
+  summaryFromCommittedEntry
+} from "./post-flow";
 import { StreamIcon } from "./StreamIcon";
 import type { StreamServices } from "./types";
 
@@ -37,6 +41,7 @@ export function StreamApp({ services, composeRequests }: StreamAppProps) {
   const [composerBusy, setComposerBusy] = useState(false);
   const [focusRequestId, setFocusRequestId] = useState(0);
   const atNewest = useRef(true);
+  const mountedRef = useRef(true);
   const composeButtonRef = useRef<HTMLButtonElement>(null);
   const draftRef = useRef(draft);
   const sendingRef = useRef(sending);
@@ -58,6 +63,10 @@ export function StreamApp({ services, composeRequests }: StreamAppProps) {
   }, [composeRequests]);
 
   const persistDraft = useCallback((current: DraftState) => {
+    if (current.phase === "committing") {
+      const persisted = services.drafts.load();
+      if (persisted.phase !== "committing" || persisted.identity?.id !== current.identity?.id) return;
+    }
     if (isEmptyDraft(current)) services.drafts.clear();
     else services.drafts.save(current);
   }, [services.drafts]);
@@ -85,6 +94,22 @@ export function StreamApp({ services, composeRequests }: StreamAppProps) {
 
   useEffect(() => composeRequests.subscribe(consumeComposeRequests), [composeRequests, consumeComposeRequests]);
 
+  useEffect(() => services.capture.subscribe((committed) => {
+    const current = draftRef.current;
+    if (current.phase !== "committing" || current.identity?.id !== committed.metadata.stream_id) return;
+    const clearedDraft = emptyDraft();
+    draftRef.current = clearedDraft;
+    setDraft(clearedDraft);
+    setError(null);
+  }), [services.capture]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       persistDraft(draft);
@@ -95,7 +120,7 @@ export function StreamApp({ services, composeRequests }: StreamAppProps) {
   useEffect(() => () => persistDraft(draftRef.current), [persistDraft]);
 
   useEffect(() => {
-    const ids = services.index.getEntryIds();
+    const ids = new Set(entries.map((entry) => entry.id));
     if (draft.identity) ids.add(draft.identity.id);
     setRecovery(services.recovery.scan(ids, services.index.malformedEntryCount, draft));
   }, [draft.phase, draft.identity, entries, services.index, services.recovery]);
@@ -135,6 +160,7 @@ export function StreamApp({ services, composeRequests }: StreamAppProps) {
   };
 
   const removeAttachment = (attachment: StoredAttachment) => {
+    services.attachments.releaseFresh([attachment]);
     mutateDraft((current) => ({
       ...current,
       attachments: current.attachments.filter((item) => item.path !== attachment.path)
@@ -158,32 +184,41 @@ export function StreamApp({ services, composeRequests }: StreamAppProps) {
     setSending(true);
     setDraft((current) => ({ ...current, identity, body: outcome.body, tags: outcome.tags, phase: "committing", updatedAt: Date.now() }));
     try {
-      await services.capture.submit({
+      const committed = await services.capture.submit({
         identity,
         body: outcome.body,
         tags: outcome.tags,
         attachments: draft.attachments
       });
+      services.attachments.releaseFresh(draft.attachments);
       const clearedDraft = emptyDraft();
-      draftRef.current = clearedDraft;
-      setDraft(clearedDraft);
-      try {
-        await services.index.rebuild("create");
-      } catch (caught) {
+      const mtime = services.repository.getFile(committed.path)?.stat.mtime ?? Date.now();
+      const summary = summaryFromCommittedEntry(committed, mtime);
+      services.index.recordCommitted(summary);
+      if (mountedRef.current) {
+        draftRef.current = clearedDraft;
+        setDraft(clearedDraft);
+        atNewest.current = true;
+        setNewCount(0);
+        setScrollToNewestSignal((value) => value + 1);
+        showTimeline();
+      }
+      beginTimelineRefresh(services.index, (caught) => {
         const message = caught instanceof Error ? caught.message : String(caught);
         new Notice(`Post saved, but the timeline could not refresh: ${message}`);
-      }
-      setNewCount(0);
-      setScrollToNewestSignal((value) => value + 1);
-      showTimeline();
+      });
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : String(caught);
-      setDraft((current) => ({ ...current, phase: "error", error: message, updatedAt: Date.now() }));
-      setError(message);
+      if (mountedRef.current) {
+        setDraft((current) => ({ ...current, phase: "error", error: message, updatedAt: Date.now() }));
+        setError(message);
+      }
     } finally {
       sendingRef.current = false;
-      setSending(false);
-      consumeComposeRequests();
+      if (mountedRef.current) {
+        setSending(false);
+        consumeComposeRequests();
+      }
     }
   };
 

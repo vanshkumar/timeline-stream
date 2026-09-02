@@ -428,6 +428,17 @@
   color: var(--text-error);
 }
 
+.personal-stream-media-status {
+  margin: 1px 0 7px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: 1.4;
+}
+
+.personal-stream-media-status:empty {
+  display: none;
+}
+
 .personal-stream-new-pill {
   position: absolute;
   top: 14px;

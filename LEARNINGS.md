@@ -9,6 +9,11 @@
 
 ## Patterns and Preferences
 
+**[2026-09-02] — Mobile attachment capture and posting**
+- Observation: On an iCloud-backed mobile vault, `Vault.createBinary` and `Vault.create` can succeed before path lookups, cached reads, or a full index rebuild can observe the new files; making those cache operations part of preview or UI completion left photos invisible and confirmed posts stuck in the composer.
+- Action: Use the file/content returned by the successful create as the immediate preview and commit source, record confirmed entries in `StreamIndex`, keep them through generation-guarded rebuilds, and reconcile caches in the background after returning to the timeline.
+- Confidence: high
+
 **[2026-09-01] — Entry attachment deletion**
 - Observation: Attachment folders are normally owned by one stream ID, but iCloud identity variants share that ID and duplicated entries currently keep links into the original owner's folder.
 - Action: Trash the entry note first, then trash only its validated owner folder after checking surviving Markdown files and live metadata references; recovery scans must treat referenced owner IDs as live.

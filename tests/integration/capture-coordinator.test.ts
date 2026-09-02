@@ -34,12 +34,19 @@ describe("CaptureCoordinator", () => {
     const verifyAll = vi.fn(async () => undefined);
     const commit = vi.fn(async () => parsedEntry(input));
     const coordinator = new CaptureCoordinator({ commit }, { verifyAll }, { save, clear });
+    const completed = vi.fn();
+    coordinator.subscribe(completed);
 
     await expect(coordinator.submit(input)).resolves.toMatchObject({ path: input.identity.notePath });
     expect(verifyAll).toHaveBeenCalledOnce();
     expect(commit).toHaveBeenCalledOnce();
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ phase: "committing" }));
     expect(clear).toHaveBeenCalledOnce();
+    expect(completed).toHaveBeenCalledWith(expect.objectContaining({ path: input.identity.notePath }));
+
+    const replayed = vi.fn();
+    coordinator.subscribe(replayed);
+    expect(replayed).toHaveBeenCalledWith(expect.objectContaining({ path: input.identity.notePath }));
   });
 
   it("preserves a recoverable error when attachment verification or note creation fails", async () => {
